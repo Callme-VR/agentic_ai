@@ -28,3 +28,23 @@ class states(BaseModel):
                raise ValueError("Score must be positive")
           return v
 
+
+# python dataclasses
+# standard python library for data classes
+from dataclasses import dataclass, field
+
+# decorator
+@dataclass
+class states:
+     topic:str=""
+     summary:str=""
+     # score:int=0
+     messages:list=field(default_factory=list)
+     
+
+# now create the states with langraph
+
+from langgraph.graph import MessagesState
+class states(MessagesState):
+     user_name:str=""
+     language:str=""
