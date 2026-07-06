@@ -191,40 +191,43 @@ app = Builder_graph.compile()
 # Sample Input
 # =====================================================
 
-simple_script = """
+sample_script = """
 Yo guys! Welcome back to the stream.
 
-Today I am going to show you how to hack into your friend's
-system using some script I copied directly from online forums.
+Today I am going to show you how to hack into
+your friend's system using a script I copied
+directly from an online forum.
 
-Honestly, traditional security protocols are absolute garbage
-and anyone still using them is an absolute idiot.
+Honestly, traditional security protocols are
+absolute garbage and anyone still using them
+is an absolute idiot and motherfucker you are stupid.
 
-Let's dive into the code and fuck this system.
+Let's dive into the code! 
 """
+
+# =====================================================
+# Initial State
+# =====================================================
+
+initial_state = {
+    "raw_text": sample_script,
+    "safety_score": {}
+}
 
 # =====================================================
 # Execute Workflow
 # =====================================================
 
-result = app.invoke(
-    {
-        "raw_text": simple_script
-    }
-)
+final_state = app.invoke(initial_state)
 
 # =====================================================
-# Print Results
+# Print Final Result
 # =====================================================
 
 print("\n" + "=" * 60)
 print("FINAL SAFETY REPORT")
 print("=" * 60)
 
-print(result["safety_score"])
+print(final_state["safety_score"])
 
 print("=" * 60)
-
-
-
-# what is Reducers in langgraph
