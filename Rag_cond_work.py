@@ -3,7 +3,7 @@
 # ==========================================================
 
 import os
-from typing import TypedDict,Annotated
+from typing import TypedDict, Annotated
 
 from dotenv import load_dotenv
 
@@ -25,7 +25,6 @@ load_dotenv()
 
 # ==========================================================
 # Initialize HuggingFace Embedding Model
-# Used to convert text chunks into vector embeddings
 # ==========================================================
 
 embedding = HuggingFaceEmbeddings(
@@ -44,31 +43,22 @@ LLM = ChatGroq(
 
 # ==========================================================
 # Build a Simple RAG Retriever
-# Loads PDF
-# Splits into chunks
-# Creates FAISS Vector Store
-# Returns Retriever
 # ==========================================================
 
 def build_rag_retriver(pdf_path: str):
 
-    # Load PDF
     loader = PyPDFLoader(pdf_path)
     documents = loader.load()
 
-    # Split the document into smaller chunks
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
         chunk_overlap=150
     )
 
-    # Create document chunks
     chunks = splitter.split_documents(documents)
 
-    # Create FAISS Vector Store
     vectorStore = FAISS.from_documents(chunks, embedding)
 
-    # Return Retriever
     return vectorStore.as_retriever(
         search_kwargs={"k": 4}
     )
@@ -85,13 +75,175 @@ fee_retriever = build_rag_retriver(
     pdf_path="fee_structure.pdf"
 )
 
-# =========================================================
-# Define  states    TypedDict for RAG Retriever Mapping
-# =========================================================
+# ==========================================================
+# Define State
+# ==========================================================
+
 class State(TypedDict):
     Programme: str
     messages: Annotated[list, add_messages]
-    query_type:str
-    retrived_context:str
+    query_type: str
+    retrived_context: str
+
+# ==========================================================
+# Classifier Node
+# ==========================================================
+
+def classifier_node(state: State) -> dict:
+    """
+    Look at the latest user message and classify the query type
+    to decide which RAG retriever should be used.
+    """
+
+    last_message = state["messages"][-1]["content"]
+
+    prompt = f"""
+Classify the following student query into exactly one category:
+'academic', 'fee', or 'general'.
+
+Use 'academic' for questions about attendance, exams, grading, credits,
+promotion, course structure, summer training, or degree requirements.
+
+Use 'fee' for questions about tuition, payment, refund, late charges,
+scholarships, or any money-related topic.
+
+Use 'general' for greetings, casual talk, or anything not related to
+the college rules or fee.
+
+Query: {last_message}
+
+Return only one word: academic, fee, or general.
+"""
+
+    response = LLM.invoke(prompt)
+
+    category_query_type = response.content.strip().lower()
+
+    if "academic" in category_query_type:
+        category_query_type = "academic"
+    elif "fee" in category_query_type:
+        category_query_type = "fee"
+    else:
+        category_query_type = "general"
+
+    return {
+        "query_type": category_query_type
+    }
+
+# ==========================================================
+# Academic Retriever Node
+# ==========================================================
+
+def Academic_rag_node_retriver(state: State) -> dict:
+    """
+    Retrieve context from the academics handbook.
+    """
+
+    query = state["messages"][-1]["content"]
+
+    docs = academic_rag_retriever.invoke(query)
+
+    context = "\n".join([doc.page_content for doc in docs])
+
+    return {
+        "retrived_context": context
+    }
+
+# ==========================================================
+# Fee Retriever Node
+# ==========================================================
+
+def Fee_rag_node_retriver(state: State) -> dict:
+    """
+    Retrieve context from the fee structure document.
+    """
+
+    query = state["messages"][-1]["content"]
+
+    docs = fee_retriever.invoke(query)
+
+    context = "\n".join([doc.page_content for doc in docs])
+
+    return {
+        "retrived_context": context
+    }
+
+# ==========================================================
+# General Retriever Node
+# ==========================================================
+
+def General_rag_node_retriver(state: State) -> dict:
+    """
+    For general queries, no retrieval is needed.
+    """
+
+    return {
+        "retrived_context": "NO_RETRIEVAL_NEEDED"
+    }
+
+# ==========================================================
+# Final Response Node
+# ==========================================================
+
+def final_node_reponse(state: State) -> dict:
+    """
+    Generate a final answer personalized using the student's programme.
+    """
+
+    query = state["messages"][-1]["content"]
+    programme = state.get("Programme", "Unknown")
+    context = state["retrived_context"]
+
+    if context == "NO_RETRIEVAL_NEEDED":
+
+        prompt = f"""
+You are a helpful college assistant talking to a {programme} student.
+
+Answer the following query in a friendly and helpful manner using general knowledge.
+
+Question:
+{query}
+"""
+
+    else:
+
+        prompt = f"""
+You are a college assistant helping a {programme} student.
+
+Use the following context from the official college documents to answer the question accurately.
+
+If the context mentions specific figures for different programmes, highlight the one relevant to {programme} if possible.
+
+Context:
+{context}
+
+Question:
+{query}
+
+Give a clear, friendly, and precise answer.
+"""
+
+    response = LLM.invoke(prompt)
+
+    return {
+        "messages": [("ai", response.content.strip())]
+    }
     
-# step-3 Nodes genrations
+    
+    # router function to route to the appropriate retriever based on query type
+
+def query_router_functions(state:State):
+    if state["query_type"] == "academic":
+        return Academic_rag_node_retriver(state)
+    elif state["query_type"] == "fee":
+        return Fee_rag_node_retriver(state)
+    else:
+        return General_rag_node_retriver(state)
+
+# builing the graph for the conditional workflows
+
+graph=StateGraph(
+    state_type=State,
+)
+
+graph.add_node()
