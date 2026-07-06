@@ -1,8 +1,9 @@
 import os
+from typing import TypedDict, Annotated
+
+from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from langgraph.graph import StateGraph, START, END
-from typing import TypedDict, Annotated
-from dotenv import load_dotenv
 
 # =====================================================
 # Load environment variables from .env file
@@ -19,9 +20,8 @@ llm = ChatGroq(
 )
 
 # =====================================================
-# Custom reducer function
-# This merges the existing safety_score dictionary with
-# new updates coming from multiple parallel nodes.
+# Reducer Function
+# Merges dictionaries returned by parallel nodes
 # =====================================================
 def merger_score_dict(existing: dict, newUpdate: dict) -> dict:
     if existing is None:
@@ -30,9 +30,6 @@ def merger_score_dict(existing: dict, newUpdate: dict) -> dict:
 
 # =====================================================
 # State Definition
-# raw_text      -> Input text
-# safety_score  -> Dictionary storing scores returned
-#                  from different analyzer nodes
 # =====================================================
 class analyzer(TypedDict):
     raw_text: str
@@ -40,22 +37,25 @@ class analyzer(TypedDict):
 
 
 # =====================================================
-# Branch 1
-# Safety Analyzer
-# Checks profanity, toxicity, hate speech, etc.
+# Branch 1 : Toxicity Analyzer
 # =====================================================
-def safety_analyzer(state: analyzer) -> dict:
+def Toxicity_safety_analyzer(state: analyzer) -> dict:
     print("=== SCAN: SAFETY ANALYZER 🤬 ===")
 
     prompt = f"""
-You are an expert safety analyzer for profanity detection, abusive language,
-aggression, hate speech toward any religion, race, gender, or individual,
-and toxicity.
+You are an expert safety analyzer.
 
-Analyze the following text and return ONLY a single integer score from 0 to 100.
+Analyze the following text for:
+- Profanity
+- Hate Speech
+- Abusive Language
+- Aggression
+- Toxicity
 
-0 means completely clean.
-100 means extremely toxic.
+Return ONLY one integer between 0 and 100.
+
+0 = Completely Safe
+100 = Extremely Toxic
 
 Text:
 {state["raw_text"]}
@@ -76,25 +76,24 @@ Text:
 
 
 # =====================================================
-# Branch 2
-# Copyright Analyzer
-# Checks plagiarism and trademark risk
+# Branch 2 : Copyright Analyzer
 # =====================================================
-def Coyy_Analuzer(state: analyzer) -> dict:
-    print("[Branch-2] Analyzing Copyright and Originality Risk 🤔...")
+def Copyright_Analyzer(state: analyzer) -> dict:
+    print("=== SCAN: COPYRIGHT ANALYZER 📄 ===")
 
     prompt = f"""
 Analyze the following text.
 
-Judge whether it sounds heavily plagiarized,
-unoriginal, or contains corporate trademark risks.
+Determine whether it appears:
 
-Provide a score from 0 to 100.
+- Plagiarized
+- Unoriginal
+- Contains trademark risks
 
-0 means completely original.
-100 means very high copyright or trademark risk.
+Return ONLY one integer between 0 and 100.
 
-Return ONLY the integer number.
+0 = Completely Original
+100 = High Copyright Risk
 
 Text:
 {state["raw_text"]}
@@ -115,26 +114,22 @@ Text:
 
 
 # =====================================================
-# Branch 3
-# Cultural Analyzer
-# Checks cultural and regional sensitivity
+# Branch 3 : Cultural Analyzer
 # =====================================================
-def clutural_analyzer(state: analyzer) -> dict:
-    print("[Branch-3] Analyzing Regional and Cultural Sensitivity 🌍...")
+def Cultural_Analyzer(state: analyzer) -> dict:
+    print("=== SCAN: CULTURAL ANALYZER 🌍 ===")
 
     prompt = f"""
-Analyze the following text for cultural and regional sensitivity.
+Analyze the following text.
 
-Determine whether the content could be offensive,
-insensitive, or inappropriate for different cultures,
-regions, religions, or communities.
+Determine whether it is culturally insensitive,
+offensive toward any community,
+religion, race or region.
 
-Provide a score from 0 to 100.
+Return ONLY one integer between 0 and 100.
 
-0 means culturally safe.
-100 means highly culturally insensitive.
-
-Return ONLY the integer number.
+0 = Completely Safe
+100 = Highly Offensive
 
 Text:
 {state["raw_text"]}
@@ -146,12 +141,90 @@ Text:
         score = int(response.content.strip())
     except ValueError:
         score = 0
-        
-    # Return the updated safety_score dictionary with sub-doctionary exact  under the `safety_score` key
+
     return {
         "safety_score": {
             "Cultural_sensitivity": score
         }
     }
-    
-builder=StateGraph(analyzer)
+
+
+# =====================================================
+# Build LangGraph Workflow
+# =====================================================
+
+Builder_graph = StateGraph(analyzer)
+
+# -----------------------------------------------------
+# Register Nodes
+# -----------------------------------------------------
+
+Builder_graph.add_node("safety_analyzer", Toxicity_safety_analyzer)
+Builder_graph.add_node("copyright_analyzer", Copyright_Analyzer)
+Builder_graph.add_node("cultural_analyzer", Cultural_Analyzer)
+
+# -----------------------------------------------------
+# Fan-Out
+# START -> Three Parallel Nodes
+# -----------------------------------------------------
+
+Builder_graph.add_edge(START, "safety_analyzer")
+Builder_graph.add_edge(START, "copyright_analyzer")
+Builder_graph.add_edge(START, "cultural_analyzer")
+
+# -----------------------------------------------------
+# Fan-In
+# Three Nodes -> END
+# -----------------------------------------------------
+
+Builder_graph.add_edge("safety_analyzer", END)
+Builder_graph.add_edge("copyright_analyzer", END)
+Builder_graph.add_edge("cultural_analyzer", END)
+
+# -----------------------------------------------------
+# Compile Graph
+# -----------------------------------------------------
+
+app = Builder_graph.compile()
+
+# =====================================================
+# Sample Input
+# =====================================================
+
+simple_script = """
+Yo guys! Welcome back to the stream.
+
+Today I am going to show you how to hack into your friend's
+system using some script I copied directly from online forums.
+
+Honestly, traditional security protocols are absolute garbage
+and anyone still using them is an absolute idiot.
+
+Let's dive into the code and fuck this system.
+"""
+
+# =====================================================
+# Execute Workflow
+# =====================================================
+
+result = app.invoke(
+    {
+        "raw_text": simple_script
+    }
+)
+
+# =====================================================
+# Print Results
+# =====================================================
+
+print("\n" + "=" * 60)
+print("FINAL SAFETY REPORT")
+print("=" * 60)
+
+print(result["safety_score"])
+
+print("=" * 60)
+
+
+
+# what is Reducers in langgraph
