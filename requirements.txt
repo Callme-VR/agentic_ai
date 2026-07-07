@@ -11,3 +11,5 @@ faiss-cpu
 pypdf
 streamlit
 torchvision
+langchain-tavily
+langchain-mistralai
