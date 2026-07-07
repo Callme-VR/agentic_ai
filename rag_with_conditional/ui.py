@@ -2,7 +2,7 @@
 
 
 import streamlit as st
-import agent as app
+from agent import app
 # ==========================================================
 # PAGE CONFIG
 # ==========================================================
@@ -52,7 +52,8 @@ st.markdown("""
 
 .chat-ai{
 
-    background:white;
+    background:#F8FAFC;
+    color:#1E293B;
     padding:15px;
     border-radius:15px;
     border:1px solid #E2E8F0;

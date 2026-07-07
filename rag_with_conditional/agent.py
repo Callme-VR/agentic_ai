@@ -82,11 +82,11 @@ def build_rag_retriever(pdf_path: str):
 # ==========================================================
 
 academic_rag_retriever = build_rag_retriever(
-    pdf_path="rag_with_conditional/academics_handbook.pdf"
+    pdf_path="academics_handbook.pdf"
 )
 
 fee_retriever = build_rag_retriever(
-    pdf_path="rag_with_conditional/fee_structure.pdf"
+    pdf_path="fee_structure.pdf"
 )
 
 # ==========================================================
@@ -278,40 +278,41 @@ app = graph.compile()
 # Run the App
 # ==========================================================
 
-print("Starting the RAG Conditional Workflow App...")
-print("Which programme are you in?")
-print("1. BCA")
-print("2. B.Com")
-print("3. BBA")
+if __name__ == "__main__":
+    print("Starting the RAG Conditional Workflow App...")
+    print("Which programme are you in?")
+    print("1. BCA")
+    print("2. B.Com")
+    print("3. BBA")
 
-programme_map = {
-    "1": "BCA",
-    "2": "B.Com",
-    "3": "BBA"
-}
+    programme_map = {
+        "1": "BCA",
+        "2": "B.Com",
+        "3": "BBA"
+    }
 
-choice = input("Enter your choice (1-3): ")
+    choice = input("Enter your choice (1-3): ")
 
-student_programme = programme_map.get(choice, "BCA")
+    student_programme = programme_map.get(choice, "BCA")
 
-print(
-    f"\nGreat! You are set as a {student_programme} student."
-    "\nYou can now ask your questions about academics, fees, or general queries.\n"
-)
-
-while True:
-
-    user_query = input("You: ")
-
-    if user_query.lower() in ["exit", "quit"]:
-        print("Exiting the app. Goodbye!")
-        break
-
-    result = app.invoke(
-        {
-            "Programme": student_programme,
-            "messages": [("human", user_query)]
-        }
+    print(
+        f"\nGreat! You are set as a {student_programme} student."
+        "\nYou can now ask your questions about academics, fees, or general queries.\n"
     )
 
-    print(f"AI: {result['messages'][-1].content}\n")
+    while True:
+
+        user_query = input("You: ")
+
+        if user_query.lower() in ["exit", "quit"]:
+            print("Exiting the app. Goodbye!")
+            break
+
+        result = app.invoke(
+            {
+                "Programme": student_programme,
+                "messages": [("human", user_query)]
+            }
+        )
+
+        print(f"AI: {result['messages'][-1].content}\n")
