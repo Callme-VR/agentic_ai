@@ -45,7 +45,7 @@ LLM = ChatGroq(
 # Build a Simple RAG Retriever
 # ==========================================================
 
-def build_rag_retriver(pdf_path: str):
+def build_rag_retriever(pdf_path: str):
 
     loader = PyPDFLoader(pdf_path)
     documents = loader.load()
@@ -57,9 +57,9 @@ def build_rag_retriver(pdf_path: str):
 
     chunks = splitter.split_documents(documents)
 
-    vectorStore = FAISS.from_documents(chunks, embedding)
+    vector_store = FAISS.from_documents(chunks, embedding)
 
-    return vectorStore.as_retriever(
+    return vector_store.as_retriever(
         search_kwargs={"k": 4}
     )
 
@@ -67,11 +67,11 @@ def build_rag_retriver(pdf_path: str):
 # Create Retrievers
 # ==========================================================
 
-academic_rag_retriever = build_rag_retriver(
+academic_rag_retriever = build_rag_retriever(
     pdf_path="academics_handbook.pdf"
 )
 
-fee_retriever = build_rag_retriver(
+fee_retriever = build_rag_retriever(
     pdf_path="fee_structure.pdf"
 )
 
@@ -90,12 +90,7 @@ class State(TypedDict):
 # ==========================================================
 
 def classifier_node(state: State) -> dict:
-    """
-    Look at the latest user message and classify the query type
-    to decide which RAG retriever should be used.
-    """
-
-    last_message = state["messages"][-1]["content"]
+    last_message = state["messages"][-1].content
 
     prompt = f"""
 Classify the following student query into exactly one category:
@@ -110,9 +105,11 @@ scholarships, or any money-related topic.
 Use 'general' for greetings, casual talk, or anything not related to
 the college rules or fee.
 
-Query: {last_message}
+Query:
+{last_message}
 
-Return only one word: academic, fee, or general.
+Return only one word:
+academic, fee, or general.
 """
 
     response = LLM.invoke(prompt)
@@ -134,16 +131,12 @@ Return only one word: academic, fee, or general.
 # Academic Retriever Node
 # ==========================================================
 
-def Academic_rag_node_retriver(state: State) -> dict:
-    """
-    Retrieve context from the academics handbook.
-    """
-
-    query = state["messages"][-1]["content"]
+def Academic_rag_node_retriever(state: State) -> dict:
+    query = state["messages"][-1].content
 
     docs = academic_rag_retriever.invoke(query)
 
-    context = "\n".join([doc.page_content for doc in docs])
+    context = "\n".join(doc.page_content for doc in docs)
 
     return {
         "retrived_context": context
@@ -153,16 +146,12 @@ def Academic_rag_node_retriver(state: State) -> dict:
 # Fee Retriever Node
 # ==========================================================
 
-def Fee_rag_node_retriver(state: State) -> dict:
-    """
-    Retrieve context from the fee structure document.
-    """
-
-    query = state["messages"][-1]["content"]
+def Fee_rag_node_retriever(state: State) -> dict:
+    query = state["messages"][-1].content  # FIXED: was ["content"]
 
     docs = fee_retriever.invoke(query)
 
-    context = "\n".join([doc.page_content for doc in docs])
+    context = "\n".join(doc.page_content for doc in docs)
 
     return {
         "retrived_context": context
@@ -172,11 +161,7 @@ def Fee_rag_node_retriver(state: State) -> dict:
 # General Retriever Node
 # ==========================================================
 
-def General_rag_node_retriver(state: State) -> dict:
-    """
-    For general queries, no retrieval is needed.
-    """
-
+def General_rag_node_retriever(state: State) -> dict:
     return {
         "retrived_context": "NO_RETRIEVAL_NEEDED"
     }
@@ -185,12 +170,8 @@ def General_rag_node_retriver(state: State) -> dict:
 # Final Response Node
 # ==========================================================
 
-def final_node_reponse(state: State) -> dict:
-    """
-    Generate a final answer personalized using the student's programme.
-    """
-
-    query = state["messages"][-1]["content"]
+def final_node_response(state: State) -> dict:
+    query = state["messages"][-1].content  # FIXED: was ["content"]
     programme = state.get("Programme", "Unknown")
     context = state["retrived_context"]
 
@@ -210,9 +191,10 @@ Question:
         prompt = f"""
 You are a college assistant helping a {programme} student.
 
-Use the following context from the official college documents to answer the question accurately.
+Use the following context from the official college documents to answer accurately.
 
-If the context mentions specific figures for different programmes, highlight the one relevant to {programme} if possible.
+If the context contains information for multiple programmes,
+highlight the answer relevant to {programme}.
 
 Context:
 {context}
@@ -220,7 +202,7 @@ Context:
 Question:
 {query}
 
-Give a clear, friendly, and precise answer.
+Give a clear, friendly and precise answer.
 """
 
     response = LLM.invoke(prompt)
@@ -228,22 +210,94 @@ Give a clear, friendly, and precise answer.
     return {
         "messages": [("ai", response.content.strip())]
     }
-    
-    
-    # router function to route to the appropriate retriever based on query type
 
-def query_router_functions(state:State):
+# ==========================================================
+# Router Function
+# ==========================================================
+
+def query_router_function(state: State):
+
     if state["query_type"] == "academic":
-        return Academic_rag_node_retriver(state)
+        return "academic_rag"
+
     elif state["query_type"] == "fee":
-        return Fee_rag_node_retriver(state)
+        return "fee_rag"
+
     else:
-        return General_rag_node_retriver(state)
+        return "general_rag"
 
-# builing the graph for the conditional workflows
+# ==========================================================
+# Build Graph
+# ==========================================================
 
-graph=StateGraph(
-    state_type=State,
+graph = StateGraph(State)
+
+graph.add_node("classifier", classifier_node)
+graph.add_node("academic_rag", Academic_rag_node_retriever)
+graph.add_node("fee_rag", Fee_rag_node_retriever)
+graph.add_node("general_rag", General_rag_node_retriever)
+graph.add_node("final_response", final_node_response)
+
+# ==========================================================
+# Edges
+# ==========================================================
+
+graph.add_edge(START, "classifier")
+
+graph.add_conditional_edges(
+    "classifier",
+    query_router_function
 )
 
-graph.add_node()
+graph.add_edge("academic_rag", "final_response")
+graph.add_edge("fee_rag", "final_response")
+graph.add_edge("general_rag", "final_response")
+graph.add_edge("final_response", END)
+
+# ==========================================================
+# Compile Graph
+# ==========================================================
+
+app = graph.compile()
+
+# ==========================================================
+# Run the App
+# ==========================================================
+
+print("Starting the RAG Conditional Workflow App...")
+print("Which programme are you in?")
+print("1. BCA")
+print("2. B.Com")
+print("3. BBA")
+
+programme_map = {
+    "1": "BCA",
+    "2": "B.Com",
+    "3": "BBA"
+}
+
+choice = input("Enter your choice (1-3): ")
+
+student_programme = programme_map.get(choice, "BCA")
+
+print(
+    f"\nGreat! You are set as a {student_programme} student."
+    "\nYou can now ask your questions about academics, fees, or general queries.\n"
+)
+
+while True:
+
+    user_query = input("You: ")
+
+    if user_query.lower() in ["exit", "quit"]:
+        print("Exiting the app. Goodbye!")
+        break
+
+    result = app.invoke(
+        {
+            "Programme": student_programme,
+            "messages": [("human", user_query)]
+        }
+    )
+
+    print(f"AI: {result['messages'][-1].content}\n")
