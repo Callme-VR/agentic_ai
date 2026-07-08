@@ -1,5 +1,5 @@
 import streamlit as st
-from agent_backend import app, MAX_ATTEMPTS
+from agent import app, MAX_ATTEMPTS
 
 st.set_page_config(page_title="LinkedIn Post Generator", page_icon="✍️", layout="centered")
 
