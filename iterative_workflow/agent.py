@@ -28,7 +28,7 @@ review_llm = ChatGroq(
     api_key=os.getenv("GROQ_API_KEY"),
 )
 
-MAX_ATTEMPTS = 3  # safety cap to prevent infinite retry loop
+MAX_ATTEMPTS = 3
 
 # ---------- state ----------
 class State(TypedDict):
@@ -78,16 +78,14 @@ def writer_node_post(state: State) -> dict:
         "attempt": attempt,
     }
 
-def route_after_writer(state: State) -> str:
-    """If the writer called a tool, go run it. Otherwise extract the draft."""
+def should_use_tool(state: State) -> str:
     last_message = state["messages"][-1]
     if getattr(last_message, "tool_calls", None):
-        return "tool_node"
-    return "extract_draft_node"
+        return "tools"
+    return "extract_draft"
 
 # ---------- extract ----------
 def extract_draft_node(state: State) -> dict:
-    """After the writer finishes, pull the final text out as the draft."""
     last_message = state["messages"][-1]
     draft = last_message.content
     print(f"\n\nGenerated post:\n{draft}\n\n")
@@ -128,7 +126,6 @@ def reviewer_node_post(state: State) -> dict:
     )
 
     review_text = response.content.strip()
-
     is_approved = "APPROVED" in review_text.upper().split("FEEDBACK")[0]
 
     if "FEEDBACK:" in review_text:
@@ -142,27 +139,55 @@ def reviewer_node_post(state: State) -> dict:
 
     return {"review_feedback": feedback, "isApproved": is_approved}
 
+def should_stop_looping_review(state: State) -> str:
+    if state["isApproved"]:
+        print("Post has been approved.")
+        return END
+    if state["attempt"] >= MAX_ATTEMPTS:
+        print("Post exceeded the maximum number of attempts.")
+        return END
+    return "writer"
 
+# ---------- build graph ----------
+graph = StateGraph(State)
 
-# router functions
+graph.add_node("writer", writer_node_post)
+graph.add_node("tools", tool_node)
+graph.add_node("extract_draft", extract_draft_node)
+graph.add_node("reviewer", reviewer_node_post)
 
-def should_use_tool(state:State):
-     last_messages=state["messages"][-1]
-     if getattr(last_messages,"tool_calls",None):
-         return "tool_node"
-     return "extract_node_draft"
+graph.add_edge(START, "writer")
+graph.add_conditional_edges(
+    "writer",
+    should_use_tool,
+    {"tools": "tools", "extract_draft": "extract_draft"},
+)
+graph.add_edge("tools", "writer")          # tool result goes back to writer, not reviewer
+graph.add_edge("extract_draft", "reviewer")
+graph.add_conditional_edges(
+    "reviewer",
+    should_stop_looping_review,
+    {"writer": "writer", END: END},
+)
 
-def should_stop_looping_review(state:State):
-     if state["isApproved"]:
-          print("post has been approved")
-          return END
-     if state["attempt"]>=3:
-          print("post has been exceeded the maximum number of attempts")
-          return END
-     return "writer"
-     
-     
-     
-# build the graph
+app = graph.compile()
 
-graph=StateGraph(State)
+# ---------- run ----------
+
+while True:
+    topic = input("Enter the topic for your LinkedIn post (or 'exit' to quit): ").strip()
+    if topic.lower() == "exit":
+        break
+
+    result = app.invoke({
+        "topic": topic,
+        "messages": [],
+        "draft": "",
+        "review_feedback": "",
+        "isApproved": False,
+        "attempt": 0,
+    })
+
+    print("\n=== FINAL POST ===\n")
+    print(result["draft"])
+    print("Approved:", result["isApproved"])
